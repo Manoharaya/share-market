@@ -17,6 +17,8 @@ mibian
 py-vollib
 sqlalchemy
 pydantic-settings
+upstox-python-sdk
+
 
 
 

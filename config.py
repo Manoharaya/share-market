@@ -6,9 +6,10 @@ class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
     # ── Broker (READ-ONLY scope — no trading permissions needed) ──
-    ZERODHA_API_KEY: str = ""
-    ZERODHA_API_SECRET: str = ""
-    ZERODHA_ACCESS_TOKEN: str = ""
+    UPSTOX_API_KEY: str = ""
+    UPSTOX_API_SECRET: str = ""
+    UPSTOX_ACCESS_TOKEN: str = ""
+
 
     # ── News & Macro Data ──
     NEWSAPI_KEY: str = ""
