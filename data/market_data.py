@@ -128,7 +128,8 @@ class MarketData:
                         'oi': float(md.get('oi', 0.0)),
                         'volume': float(md.get('volume', 0.0)),
                         'bid': float(md.get('bid_price', 0.0)),
-                        'ask': float(md.get('ask_price', 0.0))
+                        'ask': float(md.get('ask_price', 0.0)),
+                        'delta': float(co.get('option_greeks', {}).get('delta', 0.5))
                     })
                     
                 # Parse Put (PE) option
@@ -142,7 +143,8 @@ class MarketData:
                         'oi': float(md.get('oi', 0.0)),
                         'volume': float(md.get('volume', 0.0)),
                         'bid': float(md.get('bid_price', 0.0)),
-                        'ask': float(md.get('ask_price', 0.0))
+                        'ask': float(md.get('ask_price', 0.0)),
+                        'delta': float(po.get('option_greeks', {}).get('delta', -0.5))
                     })
             
             df = pd.DataFrame(rows)
