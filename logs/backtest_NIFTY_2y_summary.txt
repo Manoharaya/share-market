@@ -1,0 +1,7 @@
+BACKTEST SUMMARY — NIFTY (2y)
+Total Trades  : 18
+Win Rate      : 0.0%
+Profit Factor : 0.0
+Sharpe        : -0.781
+Max Drawdown  : 165.38%
+Total P&L     : INR -164.97
