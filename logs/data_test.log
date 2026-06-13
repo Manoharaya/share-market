@@ -1,0 +1,27 @@
+2026-06-13 21:51:07.593 | INFO     | __main__:run_tests:23 - ================ STARTING DATA LAYER INTEGRATION TESTS ================
+2026-06-13 21:51:07.594 | INFO     | data.news_collector:__init__:19 - Initializing FinBERT text classification pipeline (downloads ~400MB on first run)...
+2026-06-13 21:51:10.620 | INFO     | data.news_collector:__init__:22 - FinBERT model loaded and cached in memory.
+2026-06-13 21:51:10.621 | INFO     | __main__:run_tests:34 - Running Test 1: MarketData Core Functionality...
+2026-06-13 21:51:11.519 | INFO     | __main__:run_tests:38 - NIFTY LTP: 23622.9
+2026-06-13 21:51:12.336 | INFO     | __main__:run_tests:43 - India VIX: 14.72
+2026-06-13 21:51:13.218 | INFO     | __main__:run_tests:49 - Option expiries available: ['2026-06-16', '2026-06-23', '2026-06-30', '2026-07-07', '2026-07-14']
+2026-06-13 21:51:14.113 | INFO     | __main__:run_tests:54 - Option chain shape: (198, 7)
+2026-06-13 21:51:14.113 | INFO     | __main__:run_tests:56 - Test 1: PASSED
+2026-06-13 21:51:14.113 | INFO     | __main__:run_tests:64 - Running Test 2: SentimentAnalyzer...
+2026-06-13 21:51:16.746 | INFO     | data.news_collector:get_sentiment:109 - Running FinBERT on 4 headlines for NIFTY...
+2026-06-13 21:51:16.879 | INFO     | data.news_collector:get_sentiment:127 - FinBERT average sentiment score for NIFTY: +0.5931
+2026-06-13 21:51:16.880 | INFO     | __main__:run_tests:69 - NIFTY news sentiment score: 0.5930679887533188
+2026-06-13 21:51:18.223 | INFO     | data.news_collector:get_sentiment:109 - Running FinBERT on 4 headlines for BANKNIFTY...
+2026-06-13 21:51:18.357 | INFO     | data.news_collector:get_sentiment:127 - FinBERT average sentiment score for BANKNIFTY: +0.5931
+2026-06-13 21:51:18.358 | INFO     | __main__:run_tests:75 - BANKNIFTY news sentiment score: 0.5930679887533188
+2026-06-13 21:51:18.358 | INFO     | __main__:run_tests:78 - Test 2: PASSED
+2026-06-13 21:51:18.358 | INFO     | __main__:run_tests:86 - Running Test 3: GlobalMacro...
+2026-06-13 21:51:22.265 | INFO     | __main__:run_tests:90 - Global Macro Signals: {'gift_nifty': 23622.900390625, 'us_markets': {'dow': 51202.26171875, 'sp500': 7431.4599609375, 'nasdaq': 25888.83984375}, 'crude_oil': 87.33000183105469, 'usdinr': 95.0999984741211, 'fii_dii': {'fii_net': 0.0, 'dii_net': 0.0}}
+2026-06-13 21:51:22.265 | INFO     | __main__:run_tests:105 - Test 3: PASSED
+2026-06-13 21:51:22.265 | INFO     | __main__:run_tests:113 - Running Test 4: Options Analysis Calculations...
+2026-06-13 21:51:23.170 | INFO     | data.market_data:get_option_chain:101 - Returning cached option chain for NIFTY (2026-06-16)
+2026-06-13 21:51:23.178 | INFO     | __main__:run_tests:122 - PCR: 1.7472
+2026-06-13 21:51:23.178 | INFO     | __main__:run_tests:123 - Max Pain Strike: 23500.0
+2026-06-13 21:51:23.178 | INFO     | __main__:run_tests:128 - Test 4: PASSED
+2026-06-13 21:51:23.178 | INFO     | __main__:run_tests:133 - =======================================================================
+2026-06-13 21:51:23.179 | INFO     | __main__:run_tests:135 - ALL INTEGRATION TESTS PASSED SUCCESSFULLY! ✅
