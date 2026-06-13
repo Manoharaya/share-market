@@ -1,9 +1,48 @@
 """
 Alert Formatter
-Builds human-readable alert formatting and structured rationale.
+Builds the signal_data dict used by telegram_bot.
 """
 
 class AlertFormatter:
+    def build(self,
+              instrument: str,
+              spot: float,
+              strategy: str,
+              legs: dict,
+              payoff: dict,
+              rationale: str,
+              exit_targets: dict,
+              **kwargs) -> dict:
+        """Assembles all signal fields: instrument, strategy, legs with premiums, max profit/loss, breakevens, rationale, exit targets"""
+        # Extract max profit, max loss, breakevens from payoff if they exist
+        max_profit = payoff.get('max_profit', 0.0) if isinstance(payoff, dict) else kwargs.get('max_profit', 0.0)
+        max_loss = payoff.get('max_loss', 0.0) if isinstance(payoff, dict) else kwargs.get('max_loss', 0.0)
+        breakevens_list = payoff.get('breakevens', []) if isinstance(payoff, dict) else kwargs.get('breakevens', [])
+        net_premium = payoff.get('net_premium', 0.0) if isinstance(payoff, dict) else kwargs.get('net_premium', 0.0)
+        
+        # Convert breakevens list to string
+        if isinstance(breakevens_list, list):
+            breakevens_str = " — ".join([f"{int(x)}" for x in breakevens_list]) if breakevens_list else "None"
+        else:
+            breakevens_str = str(breakevens_list)
+
+        signal_data = {
+            'instrument': instrument,
+            'spot': spot,
+            'strategy': strategy,
+            'legs': legs,
+            'payoff': payoff,
+            'net_premium': net_premium,
+            'max_profit': max_profit,
+            'max_loss': max_loss,
+            'breakevens': breakevens_str,
+            'rationale': rationale,
+            'exit_targets': exit_targets
+        }
+        signal_data.update(kwargs)
+        return signal_data
+
+    # Legacy calculate/format fallback if called from main.py
     def format_signal_message(
         self,
         instrument: str,
@@ -18,7 +57,6 @@ class AlertFormatter:
         """Formats the trade signal advisory into a beautiful Markdown message."""
         dir_emoji = "🟢" if direction == "Bullish" else "🔴" if direction == "Bearish" else "🟡"
         
-        # Build option legs text
         legs_desc = ""
         for leg_name, strike in legs.items():
             legs_desc += f"• *{leg_name.replace('_', ' ').title()}*: Strike {int(strike)}\n"

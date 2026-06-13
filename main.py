@@ -63,7 +63,8 @@ def run_scan(dry_run: bool = False):
 
     # Fetch global/macro metrics once per scan
     macro_data = macro.get_macro_indicators()
-    logger.info(f"Macro Indicators fetched: {macro_data}")
+    macro_signals = macro.get_signals()
+    logger.info(f"Macro Indicators fetched: {macro_data}, signals: {macro_signals}")
     
     headlines = news.get_latest_headlines()
     sentiment = sentiment_ana.calculate_sentiment(headlines)
@@ -141,8 +142,16 @@ def run_scan(dry_run: bool = False):
         
         # 6. Strategy & Strike Leg Selection
         strategy = strat_sel.determine_strategy(direction, iv_rank)
-        atm_strike = op_feat.get_atm_strike(ltp, inst)
-        legs = strike_sel.select_strikes(inst, atm_strike, strategy, atr)
+        if strategy == "No Trade":
+            logger.info(f"Strategy for {inst} determined as No Trade. Skipping.")
+            continue
+            
+        legs = strike_sel.build_legs(strategy, chain, ltp)
+        if not legs:
+            logger.warning(f"Could not build option legs for {inst} - {strategy}. Skipping.")
+            continue
+            
+        payoff = strike_sel.compute_payoff(strategy, legs)
         
         logger.info(f"Signal: {direction} (Score: {score}/100, Conf: {confidence:.2f}, Strategy: {strategy})")
         
@@ -168,19 +177,100 @@ def run_scan(dry_run: bool = False):
             if already_alerted and not dry_run:
                 logger.info(f"Signal already alerted for {inst} today. Skipping duplicate alert.")
             else:
-                indicators_dict = {
-                    'pcr': pcr,
-                    'vix': current_vix,
-                    'iv_rank': iv_rank,
-                    'rsi': latest_tech.get('Rsi', 50.0),
-                    'sentiment': sentiment
+                today_dt = pd.Timestamp.now().normalize()
+                expiry_dt = pd.to_datetime(nearest_expiry)
+                dte = (expiry_dt - today_dt).days
+                
+                # Build rationale dynamically
+                rationale_parts = []
+                if iv_rank >= 50.0:
+                    rationale_parts.append(f"IV Rank at {iv_rank:.0f}% — options are expensive, ideal for premium selling")
+                else:
+                    rationale_parts.append(f"IV Rank at {iv_rank:.0f}% — options are relatively cheap, ideal for buying spreads")
+                if pcr > 1.0:
+                    rationale_parts.append(f"PCR is bullish ({pcr:.2f})")
+                elif pcr < 0.8:
+                    rationale_parts.append(f"PCR is bearish ({pcr:.2f})")
+                rsi = latest_tech.get('Rsi', 50.0)
+                if rsi > 65:
+                    rationale_parts.append(f"RSI is overbought ({rsi:.1f})")
+                elif rsi < 35:
+                    rationale_parts.append(f"RSI is oversold ({rsi:.1f})")
+                if sentiment > 0.15:
+                    rationale_parts.append(f"News sentiment is positive ({sentiment:+.2f})")
+                elif sentiment < -0.15:
+                    rationale_parts.append(f"News sentiment is negative ({sentiment:+.2f})")
+                if not rationale_parts:
+                    rationale_parts.append(f"Consensus Neutral signal with confidence {confidence:.0%}")
+                rationale = "\n".join(rationale_parts)
+                
+                net_premium = payoff.get('net_premium', 0.0)
+                if net_premium >= 0:
+                    target_val = net_premium * 0.5
+                    stop_loss_val = net_premium * 2.0
+                    max_profit_desc = '  (if spot remains in profit range)'
+                    max_loss_desc = '  (wing width minus credit)'
+                else:
+                    target_val = abs(net_premium) * 2.0
+                    stop_loss_val = abs(net_premium) * 0.5
+                    max_profit_desc = '  (maximum potential return)'
+                    max_loss_desc = '  (premium paid)'
+
+                exit_targets = {
+                    'target': target_val,
+                    'stop_loss': stop_loss_val
                 }
-                msg = formatter.format_signal_message(
-                    inst, ltp, direction, score, confidence, strategy, legs, indicators_dict
+                
+                # Translate legs format for builder/alerter
+                formatted_legs = []
+                for leg_name, details in legs.items():
+                    action = 'SELL' if 'sell' in leg_name else 'BUY'
+                    opt_type = 'CE' if 'call' in leg_name else 'PE'
+                    strike = details.get('strike', 0.0)
+                    premium = details.get('premium', 0.0)
+                    
+                    # Find delta from chain
+                    delta = 0.0
+                    sub_chain = chain[(chain['strike'] == strike) & (chain['type'].str.upper() == opt_type)].copy()
+                    if not sub_chain.empty:
+                        delta = float(sub_chain['delta'].iloc[0])
+                    else:
+                        delta = 0.50 if opt_type == 'CE' else -0.50
+                        
+                    formatted_legs.append({
+                        'action': action,
+                        'symbol': f"{inst} {int(strike)} {opt_type}",
+                        'premium': premium,
+                        'delta': delta
+                    })
+
+                signal_data = formatter.build(
+                    instrument=inst,
+                    spot=ltp,
+                    strategy=strategy,
+                    legs=formatted_legs,
+                    payoff=payoff,
+                    rationale=rationale,
+                    exit_targets=exit_targets,
+                    score=score,
+                    confidence=confidence,
+                    expiry=nearest_expiry,
+                    iv_rank=iv_rank,
+                    vix=current_vix,
+                    pcr=pcr,
+                    sgx_change=((macro_signals.get('gift_nifty', ltp) - ltp) / ltp * 100),
+                    usdinr=macro_signals.get('usdinr', 83.50),
+                    sentiment_score=sentiment,
+                    sentiment_label="BULLISH" if sentiment > 0.15 else "BEARISH" if sentiment < -0.15 else "NEUTRAL",
+                    max_profit_desc=max_profit_desc,
+                    max_loss_desc=max_loss_desc,
+                    exit_time='15:30 IST',
+                    dte=dte,
+                    timestamp=pd.Timestamp.now().strftime('%H:%M:%S')
                 )
                 
                 logger.info(f"Sending Telegram alert for {inst}...")
-                success = bot.send_message(msg)
+                success = bot.send_signal_alert(signal_data)
                 if success:
                     db.mark_alerted(inst)
         else:
