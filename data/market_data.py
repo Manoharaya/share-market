@@ -10,8 +10,13 @@ from config import config
 
 INDEX_MAPPING = {
     'NIFTY': 'NSE_INDEX|Nifty 50',
+    'NIFTY 50': 'NSE_INDEX|Nifty 50',
     'BANKNIFTY': 'NSE_INDEX|Nifty Bank',
-    'FINNIFTY': 'NSE_INDEX|Nifty Fin Service'
+    'NIFTY BANK': 'NSE_INDEX|Nifty Bank',
+    'FINNIFTY': 'NSE_INDEX|Nifty Fin Service',
+    'NIFTY FIN SERVICE': 'NSE_INDEX|Nifty Fin Service',
+    'INDIA VIX': 'NSE_INDEX|India VIX',
+    'INDIAVIX': 'NSE_INDEX|India VIX'
 }
 
 class MarketData:
@@ -24,19 +29,25 @@ class MarketData:
 
     def get_ltp(self, instrument: str) -> float:
         """Get live last traded price using Upstox API"""
-        inst_key = INDEX_MAPPING.get(instrument, instrument)
+        # Clean the input string and resolve mapping
+        cleaned_instrument = instrument.upper().strip()
+        inst_key = INDEX_MAPPING.get(cleaned_instrument, cleaned_instrument)
+        
         url = f"https://api.upstox.com/v3/market-quote/ltp"
         params = {'instrument_key': inst_key}
         try:
             response = requests.get(url, headers=self.headers, params=params)
             response.raise_for_status()
             data = response.json()
+            
+            # The returned key will have a colon instead of a pipe
             lookup_key = inst_key.replace('|', ':')
             if 'data' in data and lookup_key in data['data']:
                 return float(data['data'][lookup_key]['last_price'])
             else:
+                # Look for matching substring key in response dict
                 for k, v in data.get('data', {}).items():
-                    if instrument in k or lookup_key in k:
+                    if cleaned_instrument in k or lookup_key in k:
                         return float(v['last_price'])
                 logger.error(f"LTP not found in response for {instrument}. Response: {data}")
                 return 0.0
@@ -44,9 +55,15 @@ class MarketData:
             logger.error(f"Error fetching LTP for {instrument}: {e}")
             return 0.0
 
+    def get_india_vix(self) -> float:
+        """Returns the current India VIX value using Upstox API"""
+        return self.get_ltp('INDIA VIX')
+
     def get_expiry_dates(self, instrument: str) -> list:
         """Fetch all unique expiry dates for the instrument"""
-        inst_key = INDEX_MAPPING.get(instrument, instrument)
+        cleaned_instrument = instrument.upper().strip()
+        inst_key = INDEX_MAPPING.get(cleaned_instrument, cleaned_instrument)
+        
         url = "https://api.upstox.com/v2/option/contract"
         params = {'instrument_key': inst_key}
         try:
@@ -63,7 +80,9 @@ class MarketData:
 
     def get_option_chain(self, instrument: str, expiry: str) -> list:
         """Fetch full option chain for a symbol and expiry using Upstox Option Chain API"""
-        inst_key = INDEX_MAPPING.get(instrument, instrument)
+        cleaned_instrument = instrument.upper().strip()
+        inst_key = INDEX_MAPPING.get(cleaned_instrument, cleaned_instrument)
+        
         url = "https://api.upstox.com/v2/option/chain"
         params = {
             'instrument_key': inst_key,
