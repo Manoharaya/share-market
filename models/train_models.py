@@ -1,21 +1,34 @@
 """
 Model Training Script
-Trains XGBoost and Random Forest classifiers on historical NIFTY features.
+Trains XGBoost, Random Forest, LightGBM, and PyTorch LSTM classifiers on historical NIFTY features.
 Saves models to models/saved/
 """
 import os
+import sys
 import joblib
 import pandas as pd
 import numpy as np
 from loguru import logger
 import xgboost as xgb
+import lightgbm as lgb
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, precision_score, recall_score, roc_auc_score
 
-import sys
+import torch
+import torch.nn as nn
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from features.technical import TechnicalFeatures
+from models.lstm_model import LSTMClassifier
+
+def create_sequences(X, y, lookback=20):
+    X_seq, y_seq = [], []
+    for i in range(len(X) - lookback + 1):
+        X_seq.append(X.iloc[i : i + lookback].values)
+        y_seq.append(y.iloc[i + lookback - 1])
+    return np.array(X_seq), np.array(y_seq)
 
 def train_models():
     os.makedirs('models/saved', exist_ok=True)
@@ -41,7 +54,6 @@ def train_models():
     df_clean = df_feat.dropna().copy()
     
     # Define features and target
-    # Select robust feature subset to prevent overfitting and satisfy AUC > 0.55
     feature_cols = ['RSI_14', 'BB_Width', 'Return_1d', 'Return_5d', 'Volume_Ratio', 'HV_10']
     
     X = df_clean[feature_cols]
@@ -56,7 +68,17 @@ def train_models():
     
     logger.info(f"Train size: {len(X_train)}, Test size: {len(X_test)}")
     
-    # 4. Train XGBoost
+    # Scale features (critical for LSTM Convergence)
+    scaler = StandardScaler()
+    X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=feature_cols)
+    X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=feature_cols)
+    
+    # Save scaler for runtime use
+    joblib.dump(scaler, 'models/saved/scaler.pkl')
+    
+    # ----------------------------------------------------
+    # Model 1: XGBoost
+    # ----------------------------------------------------
     logger.info("Training XGBoost Classifier...")
     xgb_model = xgb.XGBClassifier(
         n_estimators=300, 
@@ -67,7 +89,9 @@ def train_models():
     )
     xgb_model.fit(X_train, y_train)
     
-    # 5. Train Random Forest
+    # ----------------------------------------------------
+    # Model 2: Random Forest
+    # ----------------------------------------------------
     logger.info("Training Random Forest Classifier...")
     rf_model = RandomForestClassifier(
         n_estimators=200, 
@@ -75,9 +99,21 @@ def train_models():
         random_state=42
     )
     rf_model.fit(X_train, y_train)
-    
-    # 6. Evaluate Models
-    for name, model in [('XGBoost', xgb_model), ('Random Forest', rf_model)]:
+
+    # ----------------------------------------------------
+    # Model 3: LightGBM
+    # ----------------------------------------------------
+    logger.info("Training LightGBM Classifier...")
+    lgb_model = lgb.LGBMClassifier(
+        n_estimators=300,
+        num_leaves=31,
+        random_state=42,
+        verbosity=-1
+    )
+    lgb_model.fit(X_train, y_train)
+
+    # Evaluate tree models
+    for name, model in [('XGBoost', xgb_model), ('Random Forest', rf_model), ('LightGBM', lgb_model)]:
         preds = model.predict(X_test)
         probs = model.predict_proba(X_test)[:, 1]
         
@@ -96,11 +132,60 @@ def train_models():
         filename = f"models/saved/{name.lower().replace(' ', '_')}.pkl"
         joblib.dump(model, filename)
         
-        # Also save with the short alias requested in checklist (xgb.pkl / rf.pkl)
-        short_name = "xgb.pkl" if name == "XGBoost" else "rf.pkl"
+        # Short alias
+        short_name = "xgb.pkl" if name == "XGBoost" else "rf.pkl" if name == "Random Forest" else "lgb.pkl"
         joblib.dump(model, f"models/saved/{short_name}")
-        
         logger.info(f"Saved {name} to {filename} and models/saved/{short_name}")
+
+    # ----------------------------------------------------
+    # Model 4: PyTorch LSTM
+    # ----------------------------------------------------
+    logger.info("Preparing sequence data for LSTM (20-day lookback)...")
+    X_train_seq, y_train_seq = create_sequences(X_train_scaled, y_train, lookback=20)
+    X_test_seq, y_test_seq = create_sequences(X_test_scaled, y_test, lookback=20)
+    
+    logger.info(f"LSTM Train sequences: {X_train_seq.shape}, Test sequences: {X_test_seq.shape}")
+    
+    X_train_tensor = torch.tensor(X_train_seq, dtype=torch.float32)
+    y_train_tensor = torch.tensor(y_train_seq, dtype=torch.float32).unsqueeze(1)
+    X_test_tensor = torch.tensor(X_test_seq, dtype=torch.float32)
+    y_test_tensor = torch.tensor(y_test_seq, dtype=torch.float32).unsqueeze(1)
+    
+    lstm_model = LSTMClassifier(input_dim=len(feature_cols), hidden_dim=64, num_layers=2)
+    criterion = nn.BCELoss()
+    optimizer = torch.optim.Adam(lstm_model.parameters(), lr=0.005)
+    
+    logger.info("Training LSTM Classifier for 30 epochs...")
+    lstm_model.train()
+    for epoch in range(30):
+        optimizer.zero_grad()
+        outputs = lstm_model(X_train_tensor)
+        loss = criterion(outputs, y_train_tensor)
+        loss.backward()
+        optimizer.step()
+        if (epoch + 1) % 5 == 0:
+            logger.info(f"Epoch {epoch+1}/30 | Loss: {loss.item():.4f}")
+            
+    # Evaluate LSTM
+    lstm_model.eval()
+    with torch.no_grad():
+        test_probs = lstm_model(X_test_tensor).numpy()
+        test_preds = (test_probs >= 0.5).astype(int)
+        
+    acc = accuracy_score(y_test_seq, test_preds)
+    prec = precision_score(y_test_seq, test_preds, zero_division=0)
+    rec = recall_score(y_test_seq, test_preds, zero_division=0)
+    auc = roc_auc_score(y_test_seq, test_probs)
+    
+    logger.info(f"--- LSTM Test Performance ---")
+    logger.info(f"Accuracy:  {acc:.4f}")
+    logger.info(f"Precision: {prec:.4f}")
+    logger.info(f"Recall:    {rec:.4f}")
+    logger.info(f"AUC-ROC:   {auc:.4f}")
+    
+    # Save LSTM model
+    torch.save(lstm_model.state_dict(), 'models/saved/lstm.pt')
+    logger.info("Saved LSTM weights to models/saved/lstm.pt")
 
 if __name__ == '__main__':
     train_models()
